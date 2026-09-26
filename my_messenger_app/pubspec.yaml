@@ -1,0 +1,35 @@
+name: my_messenger_app
+description: "ICQ Messenger App"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  web_socket_channel: ^3.0.3
+  shared_preferences: ^2.5.3
+  audioplayers: ^6.4.0
+  flutter_local_notifications: ^19.0.0 
+  desktop_multi_window: ^0.2.0 
+  msix: ^3.18.0
+    
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sounds/
+
+msix_config:
+  display_name: ICQ Messenger
+  publisher_display_name: Your Name
+  identity_name: com.example.icqmessenger
+  logo_path: C:\Users\User\desktop\vs-code\my_messenger_app\assets\icon.png
+  capabilities: internetClient
