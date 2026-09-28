@@ -759,7 +759,52 @@ def test_phone_normalization(result):
 
 
 # ===== ГЛАВНЫЙ СЦЕНАРИЙ =====
+def test_negative_registration(result):
+    """Тест 15: Негативная регистрация — мусорный email и короткий телефон"""
+    result.start_test("🚫 Тест 15: Негативная регистрация (bad-email / short-phone)")
 
+    # Шаг 1: Регистрация с мусорным email ("mail.com" без домена пользователя)
+    ws1 = create_ws()
+    ws1.send(json.dumps({
+        "type": "register",
+        "name": "BadEmailUser",
+        "password": "pass123",
+        "email": "mail.com",   # <-- некорректный email
+        "phone": "+79001113344"
+    }))
+    resp1 = recv_json(ws1)
+    ws1.close()
+
+    if resp1 is None:
+        result.fail("Негативная регистрация (bad-email)", "Нет ответа от сервера")
+    elif "error" in resp1 and resp1.get("uin") is None:
+        result.ok(f"Регистрация с bad-email отклонена ({resp1['error']})")
+    else:
+        result.fail("Негативная регистрация (bad-email)", f"Сервер принял некорректный email: {resp1}")
+
+    # Шаг 2: Регистрация с коротким/мусорным телефоном
+    ws2 = create_ws()
+    ws2.send(json.dumps({
+        "type": "register",
+        "name": "ShortPhoneUser",
+        "password": "pass123",
+        "email": "shortphone@example.com",
+        "phone": "123"   # <-- слишком короткий номер, normalizePhone вернёт ""
+    }))
+    resp2 = recv_json(ws2)
+    ws2.close()
+
+    if resp2 is None:
+        result.fail("Негативная регистрация (short-phone)", "Нет ответа от сервера")
+    elif "error" in resp2 and resp2.get("uin") is None:
+        result.ok(f"Регистрация с short-phone отклонена ({resp2['error']})")
+    else:
+        result.fail("Негативная регистрация (short-phone)", f"Сервер принял некорректный телефон: {resp2}")
+
+    # Убедимся, что оба некорректных пользователя НЕ попали в БД
+    leaked = check_db("SELECT COUNT(*) FROM users WHERE name IN ('BadEmailUser', 'ShortPhoneUser')")[0][0]
+    if leaked != 0:
+        result.fail("Негативная регистрация (БД)", f"Некорректные пользователи попали в БД: {leaked}")
 def main():
     print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
     print(f"{Fore.CYAN}🧪 ВИЗУАЛЬНЫЕ E2E ТЕСТЫ МЕССЕНДЖЕРА ICQ{Style.RESET_ALL}")
@@ -800,6 +845,7 @@ def main():
         
         # === ДОБАВЛЯЕМ НОВЫЙ ТЕСТ ===
         test_phone_normalization(result) 
+        test_negative_registration(result)
         
     else:
         print(f"{Fore.YELLOW}⚠️  Не удалось зарегистрировать второго пользователя{Style.RESET_ALL}")
