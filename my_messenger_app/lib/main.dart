@@ -422,7 +422,20 @@ class _ContactListScreenState extends State<ContactListScreen> {
       final msg = jsonDecode(data);
       if (!mounted) return;
       if (msg['type'] == 'status') { _handleStatusChange(msg); } 
-      else if (msg['type'] == 'contact_list') { _handleContactList(msg); } 
+           else if (msg['type'] == 'contact_list') {
+        try {
+          final contacts = jsonDecode(msg['text']) as List;
+          setState(() { 
+            _contacts = contacts.map((c) => Map<String, dynamic>.from(c)).toList(); 
+            _groupContacts(); 
+          });
+          _saveContacts();
+          if (!_isInitialized) _isInitialized = true;
+        } catch (e) {
+          print('Parse error contact list'); // Логируем ошибку, но не роняем приложение
+          return; 
+        }
+      } 
       else if (msg['type'] == 'message' && msg['to'] == widget.uin) { _handleIncomingMessage(msg); }
     });
   }
@@ -671,11 +684,19 @@ class _ChatScreenState extends State<ChatScreen> {
           try { _messagePlayer.play(AssetSource('sounds/01_message.mp3')); } catch(e) {}
           setState(() { _messages.add(Map<String, dynamic>.from(msg)); });
         }
-      } else if (msg['type'] == 'history') {
+            } else if (msg['type'] == 'history') {
         if (!mounted) return;
         final historyData = msg['text'];
-        if (historyData != null && historyData != 'null') {
-          setState(() { _messages = (jsonDecode(historyData) as List).map((m) => Map<String, dynamic>.from(m)).toList(); });
+        
+        try {
+          if (historyData != null && historyData != 'null') {
+            setState(() { 
+              _messages = (jsonDecode(historyData) as List).map((m) => Map<String, dynamic>.from(m)).toList(); 
+            });
+          }
+        } catch (e) {
+          print('Parse error history'); // Защита от битого JSON в истории
+          return;
         }
       }
     });
