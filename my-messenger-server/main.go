@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"  
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ import (
 )
 
 const maxUploadedFileSize = 5 * 1024 * 1024
+var emailRegex = regexp.MustCompile(`^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$`)
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -472,6 +474,7 @@ func handleRegister(client *Client, msg map[string]interface{}) {
 	password, _ := msg["password"].(string)
 	email, _ := msg["email"].(string)
 	phone, _ := msg["phone"].(string)
+	rawPhone := phone // Сохраняем оригинальный ввод для проверки
 	phone = normalizePhone(phone)
 
 	// Читаем аватарку, если не указана — ставим смайлик по умолчанию
@@ -488,7 +491,25 @@ func handleRegister(client *Client, msg map[string]interface{}) {
 		return
 	}
 
-	uin, err := registerUser(name, password, email, phone, avatar)
+	// === НОВАЯ ВАЛИДАЦИЯ EMAIL ===
+	// Проверяем регуляркой. Если пусто ("") пропускаем (для входа только по UIN/Phone), 
+	// но если есть символы и они не проходят regex -> ошибка.
+	if email != "" && !emailRegex.MatchString(email) {
+		log.Printf("❌ Ошибка: неверный формат email: %s", email)
+		client.conn.WriteJSON(map[string]interface{}{"type": "register", "error": "Неверный формат email"})
+		return
+	}
+
+	// === НОВАЯ ВАЛИДАЦИЯ ТЕЛЕФОНА ===
+	// Если пользователь что-то написал в поле телефона, но нормализация вернула пустую строку -> мусор.
+	if rawPhone != "" && phone == "" {
+		log.Printf("❌ Ошибка: неверный формат телефона: %s", rawPhone)
+		client.conn.WriteJSON(map[string]interface{}{"type": "register", "error": "Неверный формат телефона"})
+		return
+	}
+
+	// Приводим email к нижнему регистру перед сохранением
+	uin, err := registerUser(name, password, strings.ToLower(email), phone, avatar)
 	if err != nil {
 		log.Printf("❌ Ошибка регистрации в БД: %v", err)
 		client.conn.WriteJSON(map[string]interface{}{"type": "register", "error": "Ошибка регистрации"})
@@ -498,10 +519,10 @@ func handleRegister(client *Client, msg map[string]interface{}) {
 	log.Printf("✅ Зарегистрирован: %s (UIN: %d, Avatar: %s)", name, uin, avatar)
 	client.conn.WriteJSON(map[string]interface{}{"type": "register", "uin": uin, "name": name, "avatar": avatar})
 }
-
 func handleLogin(client *Client, msg map[string]interface{}) int {
 	password, _ := msg["password"].(string)
 	log.Printf("🔑 Попытка входа")
+
 
 	var user User
 	var err error
@@ -511,25 +532,27 @@ func handleLogin(client *Client, msg map[string]interface{}) int {
 		log.Printf("Вход по UIN: %d", uin)
 		user, err = getUser(uin)
 	} else if email, ok := msg["email"].(string); ok && email != "" {
+		// === ИСПРАВЛЕНИЕ ДЛЯ ВХОДА ПО EMAIL ===
+		email = strings.ToLower(email) // Приводим к нижнему регистру
 		log.Printf("Вход по E-mail: %s", email)
 		user, err = getUserByEmail(email)
 	} else if phone, ok := msg["phone"].(string); ok && phone != "" {
+		// === ИСПРАВЛЕНИЕ ДЛЯ ВХОДА ПО ТЕЛЕФОНУ ===
+		phone = normalizePhone(phone) // Нормализуем номер
 		log.Printf("Вход по телефону: %s", phone)
+		
+		// Если после нормализации стало пусто, значит был введен мусор
+		if phone == "" {
+			client.conn.WriteJSON(map[string]interface{}{"type": "login", "error": "Неверный формат телефона"})
+			return 0
+		}
+		
 		user, err = getUserByPhone(phone)
 	} else {
 		client.conn.WriteJSON(map[string]interface{}{"type": "login", "error": "Неверные данные для входа"})
 		return 0
 	}
-
-	if err != nil {
-		client.conn.WriteJSON(map[string]interface{}{"type": "login", "error": "Пользователь не найден"})
-		return 0
-	}
-
-	if user.Password != password {
-		client.conn.WriteJSON(map[string]interface{}{"type": "login", "error": "Неверный пароль"})
-		return 0
-	}
+	
 
 	log.Printf("✅ Вошел: %s (UIN: %d)", user.Name, user.UIN)
 
